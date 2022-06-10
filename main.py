@@ -18,8 +18,8 @@ async def main(options=[], arguments=[]):
         - get-public-resource : Get which resource that have public access
     """
     options = [i.lower() for i in options]
-    if options[0] == "see-permission":
 
+    if options[0] == "see-permission":
         # Options -i & -s are required
         if len(arguments) < 2:
             seePermissionHelpPage()
@@ -40,7 +40,21 @@ async def main(options=[], arguments=[]):
             seePermissionHelpPage()
             exit()
 
-    elif options[0] == "HELP":
+    elif options[0] == 'get-public-resource':
+        # All options are required == 2
+        if len(arguments) != 2:
+            getPublicHelpPage()
+            exit()
+        elif "i" in options and "s" in options:
+            await seePublicResource(
+                allArguments[allArguments.index("-i") + 1],
+                allArguments[allArguments.index("-s") + 1]
+            )
+        else:
+            getPublicHelpPage()
+            exit()
+
+    elif options[0] == "help":
         mainHelpPage()
     else:
         mainHelpPage()
@@ -100,7 +114,7 @@ async def seePermission(i, s, r=None):
         isEmpty = False
         for c in range(0, len(item.policy.bindings)):
             if c == 0:
-                no.append(lastCount+1)
+                no.append(lastCount + 1)
                 lastCount += 1
             else:
                 lastCount += 1
@@ -138,34 +152,127 @@ async def seePermission(i, s, r=None):
     exit()
 
 
-async def lagiTesting():
+async def seePublicResource(i, s):
+    """
+        See the permission which identity has, the identity can be a user or SA
+        Options available :
+            - -i <identity>     : REQUIRED, specify the member type
+                                  Options available : allUser & allAuthUser
+
+            - -s <scope>        : REQUIRED, scope can be a project, folder, or organization
+                                  Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID},
+                                  or organizations/{ORGANIZATION_ID}\n
+    """
+
     # Create client
     client = asset_v1.AssetServiceAsyncClient()
 
     # Initialize request
-    scope = "projects/infra-sandbox-291106"
+    if i.lower() == "alluser":
+        i = "allUsers"
+    elif i.lower() == "allauthuser":
+        i = "allAuthenticatedUsers"
+
+    scope = s
     query = """
-        policy:"user:naufal.nafis@cermati.com"
-        policy.role.permissions:""
-        resource:infra-sandbox-291106
-        """
+        memberTypes:"{}"
+        """.format(i)
 
-    # //cloudresourcemanager.googleapis.com/projects/infra-sandbox-291106 => Scope satu project
-
+    query = query.replace("\n", "")
     request = asset_v1.SearchAllIamPoliciesRequest
     request.scope = scope
     request.query = query
-    result = await client.search_all_iam_policies(
-        request={
-            "scope": scope,
-            "query": query
-        }
-    )
 
-    print("=" * 100)
+    # Send the request
+    try:
+        result = await client.search_all_iam_policies(
+            request={
+                "scope": scope,
+                "query": query
+            }
+        )
+    except Exception as ex:
+        print(ex.args[0])
+        exit()
+
+    projects = []
+    assets = []
+    resources = []
+    isEmpty = True
+    isProjectIncrement = False
+    isAssetIncrement = False
     async for item in result:
-        print(item)
-        print("=" * 100)
+        # print(item)
+        isEmpty = False
+        tmpAsset = ""
+
+        if item.project not in projects:
+            projects.append(item.project)
+            isProjectIncrement = True
+        else:
+            isProjectIncrement = False
+
+        if item.asset_type + "\n" not in assets:
+            if isProjectIncrement:
+                assets.append(f"{item.asset_type}\n")
+                isAssetIncrement = True
+            else:
+                assets[-1] += f"{item.asset_type}\n"
+                isAssetIncrement = False
+        else:
+            isAssetIncrement = False
+
+        if item.resource + "\n" not in resources:
+            if isAssetIncrement:
+                resources.append(f"{item.resource}\n")
+            else:
+                resources[-1] += f"{item.resource}\n"
+
+    # Formatting the output
+    titleScope = Fore.RED + "Scope" + Fore.RESET
+    titleIdentity = Fore.RED + "Identity" + Fore.RESET
+    print("\n")
+    print("=" * 100)
+    print(f"""
+        {titleScope}    : {s}
+        {titleIdentity} : {i}
+    """)
+    print("=" * 100)
+    print("\n")
+    if isEmpty:
+        print(f"\t {Fore.RED} No role for the spesific criteria is found {Fore.RESET}\n")
+        exit()
+
+    tb = PrettyTable()
+    fieldNames = [
+        f"{Fore.LIGHTBLUE_EX} Project {Fore.RESET}",
+        f"{Fore.LIGHTBLUE_EX} Asset  {Fore.RESET}",
+        f"{Fore.LIGHTBLUE_EX} Resource  {Fore.RESET}"
+    ]
+    tb.add_column(fieldNames[0], projects)
+    tb.add_column(fieldNames[1], assets, "l")
+    tb.add_column(fieldNames[2], resources, "l")
+
+    print(f"""{tb}\n""")
+    exit()
+
+
+async def comparePermission(s1, s2, sc, r=None):
+    """
+            Compare two Service Account role was have
+            Options available :
+                - -sc <scope>        : REQUIRED, scope can be a project, folder, or organization
+                                       Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID},
+                                       or organizations/{ORGANIZATION_ID}
+                                       Example : --compare-permission -sc projects/sample-project2212
+
+                - -s1 <SA>           : REQUIRED, specify first Service Account
+                                       Example : --compare-permission -sc projects/sample-project2212 -s1 serviceAccount:{SA}
+
+                - -s2 <SA>          : REQUIRED, specify second Service Account
+                                      Example : --compare-permission -sc projects/sample-project2212 -s1 serviceAccount:{SA} -s2 serviceAccount:{SA}
+
+    """
 
 
 async def test():
@@ -221,6 +328,21 @@ def seePermissionHelpPage():
                 - -r <resource>     : Specify the resource which permission is set to the identity, it will search
                                       all the IAM policies with in the specified scope if not specified.
                                       Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}.
+            """
+    )
+
+
+def getPublicHelpPage():
+    print(
+        """
+            See which resource have an public access
+            Options available :
+                - -i <identity>     : REQUIRED, specify the member type
+                                      Options available : allUser & allAuthUser
+
+                - -s <scope>        : REQUIRED, scope can be a project, folder, or organization
+                                      Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID},
+                                      or organizations/{ORGANIZATION_ID}
             """
     )
 
