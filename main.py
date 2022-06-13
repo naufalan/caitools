@@ -54,6 +54,20 @@ async def main(options=[], arguments=[]):
             getPublicHelpPage()
             exit()
 
+    elif options[0] == 'compare-permission':
+        # All options are required == 2
+        if len(arguments) != 2:
+            comparePermissionHelpPage()
+            exit()
+        elif "sc" in options and "sa" in options:
+            await comparePermission(
+                allArguments[allArguments.index("-sc") + 1],
+                allArguments[allArguments.index("-sa") + 1],
+            )
+        else:
+            comparePermissionHelpPage()
+            exit()
+
     elif options[0] == "help":
         mainHelpPage()
     else:
@@ -102,7 +116,7 @@ async def seePermission(i, s, r=None):
             }
         )
     except Exception as ex:
-        print(ex.args[0])
+        print("\n" + ex.args[0] + " to performing this search policies")
         exit()
 
     # Getting Response
@@ -113,13 +127,14 @@ async def seePermission(i, s, r=None):
     async for item in result:
         isEmpty = False
         for c in range(0, len(item.policy.bindings)):
-            if c == 0:
-                no.append(lastCount + 1)
-                lastCount += 1
-            else:
-                lastCount += 1
-                no.append(lastCount)
-            roles.append(item.policy.bindings[c].role)
+            if item.policy.bindings[c].role not in roles:
+                if c == 0:
+                    no.append(lastCount + 1)
+                    lastCount += 1
+                else:
+                    lastCount += 1
+                    no.append(lastCount)
+                roles.append(item.policy.bindings[c].role)
 
         roles.sort()
 
@@ -130,17 +145,16 @@ async def seePermission(i, s, r=None):
     print("\n")
     print("=" * 100)
     print(f"""
-        {titleScope}    : {s}
-        {titleIdentity} : {i}
-        {titleResource} : {r}
+{titleScope}    : {s}
+{titleIdentity} : {i}
+{titleResource} : {r}
     """)
     print("=" * 100)
-    print("\n")
     if isEmpty:
-        print(f"\t {Fore.RED} No role for the spesific criteria is found {Fore.RESET}\n")
+        print(f"\n\t {Fore.RED} No role for the spesific criteria is found {Fore.RESET}\n")
         exit()
 
-    tb = PrettyTable(vertical_char="\t|", junction_char="\t+")
+    tb = PrettyTable()
     fieldNames = [
         f"{Fore.LIGHTBLUE_EX} No {Fore.RESET}",
         f"{Fore.LIGHTBLUE_EX} Role  {Fore.RESET}"
@@ -192,7 +206,7 @@ async def seePublicResource(i, s):
             }
         )
     except Exception as ex:
-        print(ex.args[0])
+        print("\n" + ex.args[0] + " to performing this search policies")
         exit()
 
     projects = []
@@ -231,16 +245,11 @@ async def seePublicResource(i, s):
     # Formatting the output
     titleScope = Fore.RED + "Scope" + Fore.RESET
     titleIdentity = Fore.RED + "Identity" + Fore.RESET
-    print("\n")
-    print("=" * 100)
-    print(f"""
-        {titleScope}    : {s}
-        {titleIdentity} : {i}
-    """)
-    print("=" * 100)
-    print("\n")
+    print("\n" + "=" * 100)
+    print(f"""{titleScope}    : {s}\n{titleIdentity} : {i}""")
+    print("=" * 100 + "\n")
     if isEmpty:
-        print(f"\t {Fore.RED} No role for the spesific criteria is found {Fore.RESET}\n")
+        print(f"\n\t {Fore.RED} No role for the spesific criteria is found {Fore.RESET}\n")
         exit()
 
     tb = PrettyTable()
@@ -257,7 +266,7 @@ async def seePublicResource(i, s):
     exit()
 
 
-async def comparePermission(s1, s2, sc, r=None):
+async def comparePermission(sc, sa):
     """
             Compare two Service Account role was have
             Options available :
@@ -266,13 +275,83 @@ async def comparePermission(s1, s2, sc, r=None):
                                        or organizations/{ORGANIZATION_ID}
                                        Example : --compare-permission -sc projects/sample-project2212
 
-                - -s1 <SA>           : REQUIRED, specify first Service Account
-                                       Example : --compare-permission -sc projects/sample-project2212 -s1 serviceAccount:{SA}
-
-                - -s2 <SA>          : REQUIRED, specify second Service Account
-                                      Example : --compare-permission -sc projects/sample-project2212 -s1 serviceAccount:{SA} -s2 serviceAccount:{SA}
+                - -sa <SA1>,<SA2>,.. : REQUIRED, specify all Service Account will be compared. If more than one SA
+                                       separate them with comma (,)
+                                       Example : --compare-permission -sc projects/sample-project2212 -sa account1,account2
 
     """
+    sas = sa.split(",")
+    tb = PrettyTable()
+
+    # Total result, example if all 3 SA have role binding, this variable should have an 3 as value
+    countResult = 0
+    roleResults = []
+    isEmpty = True
+
+    for serviceAcc in sas:
+        # Create client
+        client = asset_v1.AssetServiceAsyncClient()
+
+        # Initialize request
+        scope = sc
+        query = """
+            policy:"serviceAccount:{}"
+            policy.role.permissions:""
+        """.format(serviceAcc)
+
+        query = query.replace("\n", "")
+        request = asset_v1.SearchAllIamPoliciesRequest
+        request.scope = scope
+        request.query = query
+
+        # Send the request
+        result = None
+        try:
+            result = await client.search_all_iam_policies(
+                request={
+                    "scope": scope,
+                    "query": query
+                }
+            )
+        except Exception as ex:
+            print("\n" + ex.args[0] + " to performing this search policies")
+            exit()
+
+        roleResult = [""]
+        async for item in result:
+            isEmpty = False
+            for i in range(0, len(item.policy.bindings)):
+                if item.policy.bindings[i].role not in roleResult[-1]:
+                    if len(roleResults) == 0:
+                        roleResult[-1] += item.policy.bindings[i].role + "\n"
+
+                    else:
+                        if item.policy.bindings[i].role not in roleResults[-1]:
+                            roleResult[-1] += Fore.RED + item.policy.bindings[i].role + Fore.RESET + "\n"
+
+                        elif item.policy.bindings[i].role in roleResults[-1]:
+                            roleResult[-1] += item.policy.bindings[i].role + "\n"
+
+        roleResults.append(roleResult[-1])
+        tb.add_column(f"{Fore.LIGHTBLUE_EX} {serviceAcc} {Fore.RESET}", roleResult, 'l')
+        roleResult = []
+
+    # Formatting the output
+    titleScope = Fore.RED + "Scope" + Fore.RESET
+    titleIdentity = Fore.RED + "Service Account" + Fore.RESET
+    print("\n" + "=" * 100)
+    print(f"""
+{titleScope}\t\t: {sc}
+{titleIdentity}\t: {sa}
+    """)
+    print("=" * 100 + "\n")
+
+    if isEmpty:
+        print(f"\n\t {Fore.RED} No role for the specific criteria is found {Fore.RESET}\n")
+        exit()
+
+    print(tb)
+    print("")
 
 
 async def test():
@@ -316,34 +395,60 @@ def mainHelpPage():
 def seePermissionHelpPage():
     print(
         """
-            See the permission which identity has, the identity can be a user or SA
-            Options available :
+        Descriptions        : See the role which identity has, the identity can be a user or SA
+        
+        Usage               : caitools.py --compare-permissioin -s [SCOPE] -i [IDENTITY] -r [RESOURCE]
+        
+        Options available   :
+        
+                - -s <scope>        : REQUIRED, scope can be a project, folder, or organization
+                                      Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}
+                
                 - -i <identity>     : REQUIRED, specify the identity (can be user or SA)
                                       Example : if user => user:{email} or if SA => serviceAccount:{SA}
                 
-                - -s <scope>        : REQUIRED, scope can be a project, folder, or organization
-                                      Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID},
-                                      or organizations/{ORGANIZATION_ID}
-                
                 - -r <resource>     : Specify the resource which permission is set to the identity, it will search
-                                      all the IAM policies with in the specified scope if not specified.
-                                      Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}.
-            """
+                                      all the IAM policies with in the specified scope if resource is not specified.
+                                      Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}.
+        """
     )
 
 
 def getPublicHelpPage():
     print(
         """
-            See which resource have an public access
-            Options available :
-                - -i <identity>     : REQUIRED, specify the member type
-                                      Options available : allUser & allAuthUser
-
+        Description         : See which resource have an public access (allUser / allAuthenticatedUser)
+        
+        Usage               : --get-public-resource -s [SCOPE] -i [IDENTITY]
+        
+        Options available   :
+                
                 - -s <scope>        : REQUIRED, scope can be a project, folder, or organization
-                                      Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID},
-                                      or organizations/{ORGANIZATION_ID}
-            """
+                                      Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}
+                
+                - -i <identity>     : REQUIRED, specify the user type
+                                      Example : allUser & allAuthUser
+        """
+    )
+
+
+def comparePermissionHelpPage():
+    print(
+        """
+        Description       : Compare two or more Service Account role
+            
+        Usage             : caitools.py --compare-permission -sc [SCOPE] -sa [SA1,SA2,..]
+            
+        Options available :
+                
+                - -sc <scope>        : REQUIRED, scope can be a project, folder, or organization
+                                       Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}
+    
+                - -sa <SA1>,<SA2>,.. : REQUIRED, specify all Service Account will be compared. If more than one SA
+                                       separate them with comma (,)
+                                       Example : -sa account1,account2
+    
+         """
     )
 
 
