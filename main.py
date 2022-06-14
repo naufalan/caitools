@@ -1,4 +1,5 @@
 import sys
+import subprocess
 from google.cloud import asset_v1
 import asyncio
 from prettytable_custom import *
@@ -19,7 +20,10 @@ async def main(options=[], arguments=[]):
     """
     options = [i.lower() for i in options]
 
-    if options[0] == "see-permission":
+    if options[0] == 'init-auth':
+        await initAuth()
+        exit()
+    elif options[0] == "see-permission":
         # Options -i & -s are required
         if len(arguments) < 2:
             seePermissionHelpPage()
@@ -74,6 +78,19 @@ async def main(options=[], arguments=[]):
         mainHelpPage()
 
 
+async def initAuth():
+    homePath = subprocess.run(['echo "$HOME"'], capture_output=True, text=True, shell=True, check=True)
+    homePath = homePath.stdout.replace("\n", "")
+
+    print("Sign in ......")
+    subprocess.run(["gcloud auth application-default login"], capture_output=True, text=True, shell=True, check=True)
+    subprocess.run(["gcloud auth login"], capture_output=True, text=True, shell=True, check=True)
+
+    print("Exporting application key ...")
+    subprocess.run([f"export GOOGLE_APPLICATION_CREDENTIALS={homePath}/application_default_credentials.json"],
+                   capture_output=True, text=True, shell=True, check=True)
+
+
 async def seePermission(i, s, r=None):
     """
     See the permission which identity has, the identity can be a user or SA
@@ -116,7 +133,10 @@ async def seePermission(i, s, r=None):
             }
         )
     except Exception as ex:
-        print("\n" + ex.args[0] + " to performing this search policies")
+        if ex.grpc_status_code.name == 'PERMISSION_DENIED':
+            print("\n Current user doesn't have permission to performing this search policies")
+        elif ex.grpc_status_code.name == 'UNAVAILABLE':
+            print("\n Can't connect to Google APIs, please check current network connection")
         exit()
 
     # Getting Response
@@ -206,7 +226,10 @@ async def seePublicResource(i, s):
             }
         )
     except Exception as ex:
-        print("\n" + ex.args[0] + " to performing this search policies")
+        if ex.grpc_status_code.name == 'PERMISSION_DENIED':
+            print("\n Current user doesn't have permission to performing this search policies")
+        elif ex.grpc_status_code.name == 'UNAVAILABLE':
+            print("\n Can't connect to Google APIs, please check current network connection")
         exit()
 
     projects = []
@@ -290,7 +313,12 @@ async def comparePermission(sc, sa):
 
     for serviceAcc in sas:
         # Create client
-        client = asset_v1.AssetServiceAsyncClient()
+        try:
+            client = asset_v1.AssetServiceAsyncClient()
+        except Exception as ex:
+            print(ex)
+            print(f"\nPlease run command {Fore.RED} caitools.py --init-auth {Fore.RESET}")
+            exit()
 
         # Initialize request
         scope = sc
@@ -314,7 +342,10 @@ async def comparePermission(sc, sa):
                 }
             )
         except Exception as ex:
-            print("\n" + ex.args[0] + " to performing this search policies")
+            if ex.grpc_status_code.name == 'PERMISSION_DENIED':
+                print("\n Current user doesn't have permission to performing this search policies")
+            elif ex.grpc_status_code.name == 'UNAVAILABLE':
+                print("\n Can't connect to Google APIs, please check current network connection")
             exit()
 
         roleResult = [""]
@@ -354,28 +385,6 @@ async def comparePermission(sc, sa):
     print("")
 
 
-async def test():
-    # Create a client
-    client = asset_v1.AssetServiceAsyncClient()
-
-    # Initialize request arguments
-    scope = "projects/{}".format("infra-sandbox-291106")
-    analysis_query = asset_v1.IamPolicyAnalysisQuery()
-    analysis_query.scope = scope
-    analysis_query.resource_selector.full_resource_name = f"//cloudresourcemanager.googleapis.com/{scope}"
-    # analysis_query.IdentitySelector.identity = "user:naufal.nafis@cermati.com"
-    analysis_query.Options.output_group_edges = True
-    analysis_query.Options.output_resource_edges = True
-    request = asset_v1.AnalyzeIamPolicyRequest(analysis_query=analysis_query)
-
-    # Make the request
-    response = await client.analyze_iam_policy(request=request)
-
-    # Show the response
-    print("Type data : {}\n\n".format(type(response.main_analysis.analysis_results)))
-    print(response.main_analysis.analysis_results)
-
-
 def mainHelpPage():
     print(
         """
@@ -384,7 +393,8 @@ def mainHelpPage():
         
         Usage           : caitools.py [MENU] [OPTIONS] [OPTIONS2] ...
         
-        Available Menu  : --see-permission
+        Available Menu  : --init-auth => Initialize application credentials
+                          --see-permission
                           --compare-permission
                           --get-public-resource
                           * to see available options in each menu see : caitools.py [MENU] --help
@@ -452,12 +462,7 @@ def comparePermissionHelpPage():
     )
 
 
-# Press the green button in the gutter to run the script.
 if __name__ == '__main__':
-
-    # Buat Testing2
-    # asyncio.run(lagiTesting())
-    # exit()
 
     if len(sys.argv) == 1:
         mainHelpPage()
@@ -467,8 +472,4 @@ if __name__ == '__main__':
     allArguments = sys.argv
     opts = [opt.lstrip("--" or "-") for opt in sys.argv[1:] if opt.startswith("-") or opt.startswith("--")]
     args = [arg for arg in sys.argv[1:] if not arg.startswith("-") and not arg.startswith("--")]
-    # print("OPTIONS : {}".format(opts))
-    # print("ARGS : {}".format(args))
     asyncio.run(main(opts, args))
-
-# See PyCharm help at https://www.jetbrains.com/help/pycharm/
