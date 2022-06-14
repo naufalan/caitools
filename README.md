@@ -6,11 +6,11 @@ Simple python tools to automate several routine Cloud Asset Inventory task inclu
 
 # Requirement
 
-- `python >= v3.x`
-- `pip`
-- `[google-cloud-asset` library](https://github.com/googleapis/python-asset)
-- `[prettytable](https://pypi.org/project/prettytable/)`
-- `[colorama](https://pypi.org/project/colorama/)`
+- python >= v3.x
+- pip
+- [google-cloud-asset library](https://github.com/googleapis/python-asset)
+- [prettytable](https://pypi.org/project/prettytable/)
+- [colorama](https://pypi.org/project/colorama/)
 
 # Installation
 
