@@ -40,13 +40,13 @@ Install all dependency
 Generate Google application credentials that tools will used
 
 ```bash
-<your-venv-name>/bin/python3 --init-auth
+<your-venv-name>/bin/python3 caitools.py --init-auth
 ```
 
 Run the tools
 
 ```bash
-<your-venv-name>/bin/python3 --help
+<your-venv-name>/bin/python3 caitools.py --help
 ```
 
 Done !
@@ -65,13 +65,13 @@ pip install -r requirements.txt
 Generate Google application credentials that tools will used
 
 ```bash
-python3 --init-auth
+python3 caitools.py --init-auth
 ```
 
 Run the tools
 
 ```bash
-python3 --help
+python3 caitools.py --help
 ```
 
 Done !
