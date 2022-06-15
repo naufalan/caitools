@@ -1,5 +1,6 @@
 import sys
 import subprocess
+from os import path
 from google.cloud import asset_v1
 import asyncio
 from prettytable_custom import *
@@ -79,16 +80,36 @@ async def main(options=[], arguments=[]):
 
 
 async def initAuth():
+    print("\nInitialize Application Authentication\n" + "=" * 100)
+    isSaIsExist = False
+    keyPath = input("\nEnter the absolute path of SA key: ")
+
+    # Checking SA is exist
+    isSaIsExist = path.exists(keyPath)
+    while not isSaIsExist:
+        print("SA key not found")
+        keyPath = input("Enter the absolute path of SA key: ")
+        isSaIsExist = path.exists(keyPath)
+
     homePath = subprocess.run(['echo "$HOME"'], capture_output=True, text=True, shell=True, check=True)
     homePath = homePath.stdout.replace("\n", "")
 
-    print("Sign in ......")
-    subprocess.run(["gcloud auth application-default login"], capture_output=True, text=True, shell=True, check=True)
-    subprocess.run(["gcloud auth login"], capture_output=True, text=True, shell=True, check=True)
+    # Checking gcloud config directory is exist
+    isGcloudConfDirectoryExist = False
+    isGcloudConfDirectoryExist = path.isdir(f"{homePath}/.config/gcloud")
+    if not isGcloudConfDirectoryExist:
+        print(f"Gcloud config directory not found on {homePath}/.config/gcloud")
+        exit()
 
-    print("Exporting application key ...")
-    subprocess.run([f"export GOOGLE_APPLICATION_CREDENTIALS={homePath}/application_default_credentials.json"],
+    cp = subprocess.run([f"cp {keyPath} {homePath}/.config/gcloud/application_default_credentials.json"],
+                        capture_output=True, text=True, shell=True, check=True)
+    cp = cp.stdout
+
+    subprocess.run([f"export GOOGLE_APPLICATION_CREDENTIALS={homePath}/.config/gcloud/application_default_credentials"
+                    f".json"],
                    capture_output=True, text=True, shell=True, check=True)
+
+    print("Done\n")
 
 
 async def seePermission(i, s, r=None):
