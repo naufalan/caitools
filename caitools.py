@@ -407,7 +407,7 @@ def seePermissionHelpPage():
         """
         Descriptions        : See the role which identity has, the identity can be a user or SA
         
-        Usage               : caitools.py --compare-permissioin -s [SCOPE] -i [IDENTITY] -r [RESOURCE]
+        Usage               : caitools.py --see-permissioin -s [SCOPE] -i [IDENTITY] -r [RESOURCE]
         
         Options available   :
         
