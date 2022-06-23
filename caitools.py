@@ -1,7 +1,9 @@
 import sys
 import subprocess
+import json
 from os import path
 from google.cloud import asset_v1
+# from google.cloud import resourcemanager_v3
 import asyncio
 from prettytable_custom import *
 from colorama import init
@@ -135,7 +137,6 @@ async def seePermission(i, s, r=None):
     scope = s
     query = """
     policy:"{}"
-    policy.role.permissions:""
     """.format(i, r)
     if r is not None:
         query += "resource=//cloudresourcemanager.googleapis.com/{}".format(r)
@@ -144,6 +145,7 @@ async def seePermission(i, s, r=None):
     request = asset_v1.SearchAllIamPoliciesRequest
     request.scope = scope
     request.query = query
+    request.order_by = "assetType DESC"
 
     # Send the request
     try:
@@ -160,24 +162,36 @@ async def seePermission(i, s, r=None):
             print("\n Can't connect to Google APIs, please check current network connection")
         exit()
 
+    # Compose initial JSON output
+    jeson = {"query": {}}
+    jeson["query"]["type"] = "see-permission"
+    jeson["query"]["scope"] = s
+    jeson["query"]["identity"] = [i]
+
+    if r is not None:
+        jeson["query"]["resource"] = r
+
+    arrResults = []
+
     # Getting Response
-    roles = []
     no = []
     lastCount = 0
     isEmpty = True
     async for item in result:
         isEmpty = False
+
+        o = {"asset-type": item.asset_type, "project": item.project}
+        roles = []
+
         for c in range(0, len(item.policy.bindings)):
             if item.policy.bindings[c].role not in roles:
-                if c == 0:
-                    no.append(lastCount + 1)
-                    lastCount += 1
-                else:
-                    lastCount += 1
-                    no.append(lastCount)
                 roles.append(item.policy.bindings[c].role)
-
         roles.sort()
+        o["role"] = roles
+        o["resource"] = item.resource
+        arrResults.append(o)
+
+    jeson["result"] = arrResults
 
     # Formatting the output
     titleScope = Fore.RED + "Scope" + Fore.RESET
@@ -195,16 +209,25 @@ async def seePermission(i, s, r=None):
         print(f"\n\t {Fore.RED} No role for the spesific criteria is found {Fore.RESET}\n")
         exit()
 
-    tb = PrettyTable()
-    fieldNames = [
-        f"{Fore.LIGHTBLUE_EX} No {Fore.RESET}",
-        f"{Fore.LIGHTBLUE_EX} Role  {Fore.RESET}"
-    ]
-    tb.add_column(fieldNames[0], no)
-    tb.add_column(fieldNames[1], roles, "l")
+    jesonDump = json.dumps(jeson, indent=4)
+    print("\n" + jesonDump)
 
-    print(f"""{tb}\n""")
     exit()
+
+
+async def testing():
+    # Create client
+    client = resourcemanager_v3.ProjectsAsyncClient()
+
+    # Compose the request
+    request = resourcemanager_v3.SearchProjectsRequest()
+    # request.query = "projects/infra-sandbox-291106"
+
+    # Send the request
+    results = await client.search_projects(request=request)
+
+    async for item in results:
+        print(item)
 
 
 async def seePublicResource(i, s):
@@ -253,60 +276,118 @@ async def seePublicResource(i, s):
             print("\n Can't connect to Google APIs, please check current network connection")
         exit()
 
+    # Compose initial JSON output
+    jeson = {"query": {}}
+    jeson["query"]["type"] = "see-permission"
+    jeson["query"]["scope"] = s
+    jeson["query"]["identity"] = [i]
+    jeson["result"] = []
+
     projects = []
     assets = []
+    results = []
     resources = []
     isEmpty = True
     isProjectIncrement = False
     isAssetIncrement = False
+
+    # Composing JSON result output
+    arrResult = []
+    o = {"project": "", "assets": []}
+    arrAssets = []
+    jAsset = {}
+    arrResources = []
+    jResource = {}
+
     async for item in result:
-        # print(item)
         isEmpty = False
         tmpAsset = ""
 
+        jAsset = {}
+        jResource = {}
+        o = {}
+
         if item.project not in projects:
             projects.append(item.project)
+
+            o["project"] = item.project
+            o["assets"] = []
+            arrResult.append(o)
             isProjectIncrement = True
+
         else:
             isProjectIncrement = False
+
+        # Search project object by its project name value
+        objProject = list(filter(lambda i: i['project'] == item.project, arrResult))
+        objProject = objProject[0]
+        objProjectPos = arrResult.index(next((filter(lambda i: i['project'] == item.project, arrResult))))
 
         if item.asset_type + "\n" not in assets:
             if isProjectIncrement:
                 assets.append(f"{item.asset_type}\n")
+
+                jAsset["asset-type"] = item.asset_type
+                jAsset["resources"] = []
+                objProject["assets"].append(jAsset)
+
                 isAssetIncrement = True
             else:
                 assets[-1] += f"{item.asset_type}\n"
-                isAssetIncrement = False
+
+                jAsset["asset-type"] = item.asset_type
+                jAsset["resources"] = []
+                objProject["assets"].append(jAsset)
+
+                isAssetIncrement = True
+
+        elif isProjectIncrement:
+            jAsset["asset-type"] = item.asset_type
+            jAsset["resources"] = []
+            objProject["assets"].append(jAsset)
+            isAssetIncrement = True
+
         else:
             isAssetIncrement = False
+
+        # Get project assets array
+        arrAssets = objProject["assets"]
+        objAsset = list(filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))
+        objAsset = objAsset[0]
+        objAssetPos = objProject["assets"].index(next((filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))))
 
         if item.resource + "\n" not in resources:
             if isAssetIncrement:
                 resources.append(f"{item.resource}\n")
+
+                jResource["resource"] = item.resource
+                jResource["role"] = item.policy.bindings[0].role
+                objAsset["resources"].append(jResource)
+
             else:
                 resources[-1] += f"{item.resource}\n"
+
+                jResource["resource"] = item.resource
+                jResource["role"] = item.policy.bindings[0].role
+                objAsset["resources"].append(jResource)
+
+        objProject["assets"][objAssetPos] = objAsset
+        arrResult[objProjectPos] = objProject
+
+    jeson["result"] = arrResult
+    jesonDump = json.dumps(jeson, indent=4)
 
     # Formatting the output
     titleScope = Fore.RED + "Scope" + Fore.RESET
     titleIdentity = Fore.RED + "Identity" + Fore.RESET
     print("\n" + "=" * 100)
-    print(f"""{titleScope}    : {s}\n{titleIdentity} : {i}""")
+    print(f"""\n{titleScope}    : {s}\n{titleIdentity} : {i}\n""")
     print("=" * 100 + "\n")
     if isEmpty:
         print(f"\n\t {Fore.RED} No role for the spesific criteria is found {Fore.RESET}\n")
         exit()
 
-    tb = PrettyTable()
-    fieldNames = [
-        f"{Fore.LIGHTBLUE_EX} Project {Fore.RESET}",
-        f"{Fore.LIGHTBLUE_EX} Asset  {Fore.RESET}",
-        f"{Fore.LIGHTBLUE_EX} Resource  {Fore.RESET}"
-    ]
-    tb.add_column(fieldNames[0], projects)
-    tb.add_column(fieldNames[1], assets, "l")
-    tb.add_column(fieldNames[2], resources, "l")
-
-    print(f"""{tb}\n""")
+    print(f"""{jesonDump}\n""")
     exit()
 
 
