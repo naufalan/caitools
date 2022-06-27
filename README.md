@@ -37,7 +37,7 @@ Install all dependency
 <your-venv-bame>/bin/pip install -r requirements.txt
 ```
 
-Generate Google application credentials that tools will used
+Generate new Service Account that tool will used from gcloud console, download, then enter the absolute path of the downloaded key by running this command
 
 ```bash
 <your-venv-name>/bin/python3 caitools.py --init-auth
@@ -62,7 +62,7 @@ Install all dependency
 pip install -r requirements.txt
 ```
 
-Generate Google application credentials that tools will used
+Generate new Service Account that tool will used from gcloud console, download, then enter the absolute path of the downloaded key by running this command
 
 ```bash
 python3 caitools.py --init-auth
