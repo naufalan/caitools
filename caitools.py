@@ -66,10 +66,10 @@ async def main(options=[], arguments=[]):
         if len(arguments) != 2:
             comparePermissionHelpPage()
             exit()
-        elif "sc" in options and "sa" in options:
+        elif "s" in options and "i" in options:
             await comparePermission(
-                allArguments[allArguments.index("-sc") + 1],
-                allArguments[allArguments.index("-sa") + 1],
+                allArguments[allArguments.index("-s") + 1],
+                allArguments[allArguments.index("-i") + 1],
             )
         else:
             comparePermissionHelpPage()
@@ -393,19 +393,24 @@ async def seePublicResource(i, s):
 
 async def comparePermission(sc, sa):
     """
-            Compare two Service Account role was have
-            Options available :
-                - -sc <scope>        : REQUIRED, scope can be a project, folder, or organization
-                                       Options available : projects/{PROJECT_ID} , folders/{FOLDER_ID},
-                                       or organizations/{ORGANIZATION_ID}
-                                       Example : --compare-permission -sc projects/sample-project2212
+        Description       : Compare two or more Service Account role
 
-                - -sa <SA1>,<SA2>,.. : REQUIRED, specify all Service Account will be compared. If more than one SA
-                                       separate them with comma (,)
-                                       Example : --compare-permission -sc projects/sample-project2212 -sa account1,account2
+        Usage             : caitools.py --compare-permission -sc [SCOPE] -sa [SA1,SA2,..]
+
+        Options available :
+
+                - -s <scope>     : REQUIRED, scope can be a project, folder, or organization
+                                   Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}
+
+                - -i <SA1>,<SA2> : REQUIRED, specify two Service Account that will be compared, separate them with comma (,)
+                                   Example : -i account1,account2
 
     """
     sas = sa.split(",")
+    if len(sas) != 2:
+        comparePermissionHelpPage()
+        exit()
+
     tb = PrettyTable()
 
     # Total result, example if all 3 SA have role binding, this variable should have an 3 as value
@@ -553,12 +558,11 @@ def comparePermissionHelpPage():
             
         Options available :
                 
-                - -sc <scope>        : REQUIRED, scope can be a project, folder, or organization
-                                       Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}
+                - -s <scope>     : REQUIRED, scope can be a project, folder, or organization
+                                   Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}
     
-                - -sa <SA1>,<SA2>,.. : REQUIRED, specify all Service Account will be compared. If more than one SA
-                                       separate them with comma (,)
-                                       Example : -sa account1,account2
+                - -i <SA1>,<SA2> : REQUIRED, specify two Service Account that will be compared, separate them with comma (,)
+                                   Example : -i account1,account2
     
          """
     )
