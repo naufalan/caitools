@@ -1,6 +1,8 @@
 import sys
 import subprocess
 import json
+import threading
+import time
 from os import path
 from google.cloud import asset_v1
 # from google.cloud import resourcemanager_v3
@@ -9,7 +11,6 @@ from prettytable_custom import *
 from colorama import init
 from colorama import Fore
 from py_linq import Enumerable
-
 
 async def main(options=[], arguments=[]):
     # Main function to redirect based on argument
@@ -148,20 +149,24 @@ async def seePermission(i, s, r=None):
     request.query = query
     request.order_by = "assetType DESC"
 
+    # To mitigate racing condition
+    lock = threading.Lock()
+
     # Send the request
-    try:
-        result = await client.search_all_iam_policies(
-            request={
-                "scope": scope,
-                "query": query
-            }
-        )
-    except Exception as ex:
-        if ex.grpc_status_code.name == 'PERMISSION_DENIED':
-            print("\n Current user doesn't have permission to performing this search policies")
-        elif ex.grpc_status_code.name == 'UNAVAILABLE':
-            print("\n Can't connect to Google APIs, please check current network connection")
-        exit()
+    with lock:
+        try:
+            result = await client.search_all_iam_policies(
+                request={
+                    "scope": scope,
+                    "query": query
+                }
+            )
+        except Exception as ex:
+            if ex.grpc_status_code.name == 'PERMISSION_DENIED':
+                print("\n Current user doesn't have permission to performing this search policies")
+            elif ex.grpc_status_code.name == 'UNAVAILABLE':
+                print("\n Can't connect to Google APIs, please check current network connection")
+            exit()
 
     # Compose initial JSON output
     jeson = {"query": {}}
@@ -178,19 +183,20 @@ async def seePermission(i, s, r=None):
     no = []
     lastCount = 0
     isEmpty = True
-    async for item in result:
-        isEmpty = False
+    with lock:
+        async for item in result:
+            isEmpty = False
 
-        o = {"asset-type": item.asset_type, "project": item.project}
-        roles = []
+            o = {"asset-type": item.asset_type, "project": item.project}
+            roles = []
 
-        for c in range(0, len(item.policy.bindings)):
-            if item.policy.bindings[c].role not in roles:
-                roles.append(item.policy.bindings[c].role)
-        roles.sort()
-        o["role"] = roles
-        o["resource"] = item.resource
-        arrResults.append(o)
+            for c in range(0, len(item.policy.bindings)):
+                if item.policy.bindings[c].role not in roles:
+                    roles.append(item.policy.bindings[c].role)
+            roles.sort()
+            o["role"] = roles
+            o["resource"] = item.resource
+            arrResults.append(o)
 
     jeson["result"] = arrResults
 
@@ -247,20 +253,24 @@ async def seePublicResource(i, s):
     request.scope = scope
     request.query = query
 
+    # To mitigate racing condition
+    lock = threading.Lock()
+
     # Send the request
-    try:
-        result = await client.search_all_iam_policies(
-            request={
-                "scope": scope,
-                "query": query
-            }
-        )
-    except Exception as ex:
-        if ex.grpc_status_code.name == 'PERMISSION_DENIED':
-            print("\n Current user doesn't have permission to performing this search policies")
-        elif ex.grpc_status_code.name == 'UNAVAILABLE':
-            print("\n Can't connect to Google APIs, please check current network connection")
-        exit()
+    with lock:
+        try:
+            result = await client.search_all_iam_policies(
+                request={
+                    "scope": scope,
+                    "query": query
+                }
+            )
+        except Exception as ex:
+            if ex.grpc_status_code.name == 'PERMISSION_DENIED':
+                print("\n Current user doesn't have permission to performing this search policies")
+            elif ex.grpc_status_code.name == 'UNAVAILABLE':
+                print("\n Can't connect to Google APIs, please check current network connection")
+            exit()
 
     # Compose initial JSON output
     jeson = {"query": {}}
@@ -285,81 +295,82 @@ async def seePublicResource(i, s):
     arrResources = []
     jResource = {}
 
-    async for item in result:
-        isEmpty = False
-        tmpAsset = ""
+    with lock:
+        async for item in result:
+            isEmpty = False
+            tmpAsset = ""
 
-        jAsset = {}
-        jResource = {}
-        o = {}
+            jAsset = {}
+            jResource = {}
+            o = {}
 
-        if item.project not in projects:
-            projects.append(item.project)
+            if item.project not in projects:
+                projects.append(item.project)
 
-            o["project"] = item.project
-            o["assets"] = []
-            arrResult.append(o)
-            isProjectIncrement = True
+                o["project"] = item.project
+                o["assets"] = []
+                arrResult.append(o)
+                isProjectIncrement = True
 
-        else:
-            isProjectIncrement = False
+            else:
+                isProjectIncrement = False
 
-        # Search project object by its project name value
-        objProject = list(filter(lambda i: i['project'] == item.project, arrResult))
-        objProject = objProject[0]
-        objProjectPos = arrResult.index(next((filter(lambda i: i['project'] == item.project, arrResult))))
+            # Search project object by its project name value
+            objProject = list(filter(lambda i: i['project'] == item.project, arrResult))
+            objProject = objProject[0]
+            objProjectPos = arrResult.index(next((filter(lambda i: i['project'] == item.project, arrResult))))
 
-        if item.asset_type + "\n" not in assets:
-            if isProjectIncrement:
-                assets.append(f"{item.asset_type}\n")
+            if item.asset_type + "\n" not in assets:
+                if isProjectIncrement:
+                    assets.append(f"{item.asset_type}\n")
 
+                    jAsset["asset-type"] = item.asset_type
+                    jAsset["resources"] = []
+                    objProject["assets"].append(jAsset)
+
+                    isAssetIncrement = True
+                else:
+                    assets[-1] += f"{item.asset_type}\n"
+
+                    jAsset["asset-type"] = item.asset_type
+                    jAsset["resources"] = []
+                    objProject["assets"].append(jAsset)
+
+                    isAssetIncrement = True
+
+            elif isProjectIncrement:
                 jAsset["asset-type"] = item.asset_type
                 jAsset["resources"] = []
                 objProject["assets"].append(jAsset)
-
-                isAssetIncrement = True
-            else:
-                assets[-1] += f"{item.asset_type}\n"
-
-                jAsset["asset-type"] = item.asset_type
-                jAsset["resources"] = []
-                objProject["assets"].append(jAsset)
-
                 isAssetIncrement = True
 
-        elif isProjectIncrement:
-            jAsset["asset-type"] = item.asset_type
-            jAsset["resources"] = []
-            objProject["assets"].append(jAsset)
-            isAssetIncrement = True
-
-        else:
-            isAssetIncrement = False
-
-        # Get project assets array
-        arrAssets = objProject["assets"]
-        objAsset = list(filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))
-        objAsset = objAsset[0]
-        objAssetPos = objProject["assets"].index(
-            next((filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))))
-
-        if item.resource + "\n" not in resources:
-            if isAssetIncrement:
-                resources.append(f"{item.resource}\n")
-
-                jResource["resource"] = item.resource
-                jResource["role"] = item.policy.bindings[0].role
-                objAsset["resources"].append(jResource)
-
             else:
-                resources[-1] += f"{item.resource}\n"
+                isAssetIncrement = False
 
-                jResource["resource"] = item.resource
-                jResource["role"] = item.policy.bindings[0].role
-                objAsset["resources"].append(jResource)
+            # Get project assets array
+            arrAssets = objProject["assets"]
+            objAsset = list(filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))
+            objAsset = objAsset[0]
+            objAssetPos = objProject["assets"].index(
+                next((filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))))
 
-        objProject["assets"][objAssetPos] = objAsset
-        arrResult[objProjectPos] = objProject
+            if item.resource + "\n" not in resources:
+                if isAssetIncrement:
+                    resources.append(f"{item.resource}\n")
+
+                    jResource["resource"] = item.resource
+                    jResource["role"] = item.policy.bindings[0].role
+                    objAsset["resources"].append(jResource)
+
+                else:
+                    resources[-1] += f"{item.resource}\n"
+
+                    jResource["resource"] = item.resource
+                    jResource["role"] = item.policy.bindings[0].role
+                    objAsset["resources"].append(jResource)
+
+            objProject["assets"][objAssetPos] = objAsset
+            arrResult[objProjectPos] = objProject
 
     jeson["result"] = arrResult
     jesonDump = json.dumps(jeson, indent=4)
@@ -409,6 +420,7 @@ async def comparePermission(sc, sa):
     isEmpty = True
     resultFirstSA = []
     resultSecSA = []
+    lock = threading.Lock()
 
     for serviceAcc in sas:
         # Create client
@@ -433,28 +445,30 @@ async def comparePermission(sc, sa):
 
         # Send the request
         result = None
-        try:
-            result = await client.search_all_iam_policies(
-                request={
-                    "scope": scope,
-                    "query": query
-                }
-            )
-        except Exception as ex:
-            if ex.grpc_status_code.name == 'PERMISSION_DENIED':
-                print("\n Current user doesn't have permission to performing this search policies")
-            elif ex.grpc_status_code.name == 'UNAVAILABLE':
-                print("\n Can't connect to Google APIs, please check current network connection")
-            exit()
+        with lock:
+            try:
+                result = await client.search_all_iam_policies(
+                    request={
+                        "scope": scope,
+                        "query": query
+                    }
+                )
+            except Exception as ex:
+                if ex.grpc_status_code.name == 'PERMISSION_DENIED':
+                    print("\n Current user doesn't have permission to performing this search policies")
+                elif ex.grpc_status_code.name == 'UNAVAILABLE':
+                    print("\n Can't connect to Google APIs, please check current network connection")
+                exit()
 
-        async for item in result:
-            isEmpty = False
+        with lock:
+            async for item in result:
+                isEmpty = False
 
-            if serviceAcc == sas[0]:
-                resultFirstSA.append(item)
+                if serviceAcc == sas[0]:
+                    resultFirstSA.append(item)
 
-            elif serviceAcc == sas[1]:
-                resultSecSA.append(item)
+                elif serviceAcc == sas[1]:
+                    resultSecSA.append(item)
 
     enumFirstSA = Enumerable(resultFirstSA)
     enumSecSA = Enumerable(resultSecSA)
