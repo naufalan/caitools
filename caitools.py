@@ -8,6 +8,7 @@ import asyncio
 from prettytable_custom import *
 from colorama import init
 from colorama import Fore
+from py_linq import Enumerable
 
 
 async def main(options=[], arguments=[]):
@@ -137,7 +138,7 @@ async def seePermission(i, s, r=None):
     scope = s
     query = """
     policy:"{}"
-    """.format(i, r)
+    """.format(i)
     if r is not None:
         query += "resource=//cloudresourcemanager.googleapis.com/{}".format(r)
 
@@ -213,21 +214,6 @@ async def seePermission(i, s, r=None):
     print("\n" + jesonDump)
 
     exit()
-
-
-async def testing():
-    # Create client
-    client = resourcemanager_v3.ProjectsAsyncClient()
-
-    # Compose the request
-    request = resourcemanager_v3.SearchProjectsRequest()
-    # request.query = "projects/infra-sandbox-291106"
-
-    # Send the request
-    results = await client.search_projects(request=request)
-
-    async for item in results:
-        print(item)
 
 
 async def seePublicResource(i, s):
@@ -354,7 +340,8 @@ async def seePublicResource(i, s):
         arrAssets = objProject["assets"]
         objAsset = list(filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))
         objAsset = objAsset[0]
-        objAssetPos = objProject["assets"].index(next((filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))))
+        objAssetPos = objProject["assets"].index(
+            next((filter(lambda i: i['asset-type'] == item.asset_type, arrAssets))))
 
         if item.resource + "\n" not in resources:
             if isAssetIncrement:
@@ -413,10 +400,15 @@ async def comparePermission(sc, sa):
 
     tb = PrettyTable()
 
-    # Total result, example if all 3 SA have role binding, this variable should have an 3 as value
-    countResult = 0
-    roleResults = []
+    # Compose initial JSON output
+    jeson = {"query": {}}
+    jeson["query"]["type"] = "see-permission"
+    jeson["query"]["scope"] = sc
+    jeson["query"]["identity"] = sa
+
     isEmpty = True
+    resultFirstSA = []
+    resultSecSA = []
 
     for serviceAcc in sas:
         # Create client
@@ -431,13 +423,13 @@ async def comparePermission(sc, sa):
         scope = sc
         query = """
             policy:"serviceAccount:{}"
-            policy.role.permissions:""
         """.format(serviceAcc)
 
         query = query.replace("\n", "")
         request = asset_v1.SearchAllIamPoliciesRequest
         request.scope = scope
         request.query = query
+        request.order_by = "assetType DESC"
 
         # Send the request
         result = None
@@ -455,24 +447,111 @@ async def comparePermission(sc, sa):
                 print("\n Can't connect to Google APIs, please check current network connection")
             exit()
 
-        roleResult = [""]
         async for item in result:
             isEmpty = False
-            for i in range(0, len(item.policy.bindings)):
-                if item.policy.bindings[i].role not in roleResult[-1]:
-                    if len(roleResults) == 0:
-                        roleResult[-1] += item.policy.bindings[i].role + "\n"
 
-                    else:
-                        if item.policy.bindings[i].role not in roleResults[-1]:
-                            roleResult[-1] += Fore.RED + item.policy.bindings[i].role + Fore.RESET + "\n"
+            if serviceAcc == sas[0]:
+                resultFirstSA.append(item)
 
-                        elif item.policy.bindings[i].role in roleResults[-1]:
-                            roleResult[-1] += item.policy.bindings[i].role + "\n"
+            elif serviceAcc == sas[1]:
+                resultSecSA.append(item)
 
-        roleResults.append(roleResult[-1])
-        tb.add_column(f"{Fore.LIGHTBLUE_EX} {serviceAcc} {Fore.RESET}", roleResult, 'l')
-        roleResult = []
+    enumFirstSA = Enumerable(resultFirstSA)
+    enumSecSA = Enumerable(resultSecSA)
+    roleFirstSA = []
+    roleSecSA = []
+
+    # Find resource only on first & second SA
+    firstOnly = enumFirstSA.except_(enumSecSA, lambda x: x.resource)
+    secondOnly = enumSecSA.except_(enumFirstSA, lambda x: x.resource)
+
+    # Eliminate resource that unique on both SA for Inner Join operation
+    enumFirstSA = enumFirstSA.except_(firstOnly, lambda x: x.resource)
+    enumSecSA = enumSecSA.except_(secondOnly, lambda x: x.resource)
+    firstOnly = firstOnly.to_list()
+    secondOnly = secondOnly.to_list()
+    for item in enumFirstSA.to_list():
+        tmp = []
+        for binding in item.policy.bindings:
+            tmp.append(binding.role)
+        roleFirstSA.append(tmp)
+    for item in enumSecSA.to_list():
+        tmp = []
+        for binding in item.policy.bindings:
+            tmp.append(binding.role)
+        roleSecSA.append(tmp)
+
+    # Find role on both SA by comparing resource & role (join operation)
+    bothSA = []
+    innerJoin = enumFirstSA.join(enumSecSA, lambda e1: e1.resource, lambda e2: e2.resource, lambda r: r)
+    innerJoin = innerJoin.to_list()
+    if len(innerJoin) != 0:
+        item = None
+        for item in innerJoin[0]:
+
+            tmp = []
+            for binding in item.policy.bindings:
+                tmp.append(binding.role)
+
+            # Search the role in both SA
+            tmp1 = Enumerable(roleFirstSA).where(lambda x: x == tmp)
+            tmp2 = Enumerable(roleSecSA).where(lambda x: x == tmp)
+
+            if tmp1.count() == 1 and tmp2.count() == 1:
+                bothSA.append(item)
+            elif tmp1.count() == 1 and tmp2.count() == 0:
+                firstOnly.append(item)
+            elif tmp1.count() == 0 and tmp2.count() == 1:
+                secondOnly.append(item)
+
+    # Composing json result
+    jeson["result"] = []
+    objFirstSA = {
+        "description": f"role only on {sas[0]}",
+        "identity": [sas[0]],
+        "roles": []
+    }
+    jeson["result"].append(objFirstSA)
+    for item in firstOnly:
+        obj = {"asset-type": item.asset_type, "project": item.project}
+        tmp = []
+        for binding in item.policy.bindings:
+            tmp.append(binding.role)
+        obj["role"] = tmp
+        obj["resource"] = item.resource
+        jeson["result"][0]["roles"].append(obj)
+
+    objBoth = {
+        "description": f"role on both SA",
+        "identity": sas,
+        "roles": []
+    }
+    jeson["result"].append(objBoth)
+    for item in bothSA:
+        obj = {"asset-type": item.asset_type, "project": item.project}
+        tmp = []
+        for binding in item.policy.bindings:
+            tmp.append(binding.role)
+        obj["role"] = tmp
+        obj["resource"] = item.resource
+        jeson["result"][1]["roles"].append(obj)
+
+    objSectSA = {
+        "description": f"role only on {sas[1]}",
+        "identity": [sas[1]],
+        "roles": []
+    }
+    jeson["result"].append(objSectSA)
+    for item in secondOnly:
+        obj = {"asset-type": item.asset_type, "project": item.project}
+        tmp = []
+        for binding in item.policy.bindings:
+            tmp.append(binding.role)
+        obj["role"] = tmp
+        obj["resource"] = item.resource
+        jeson["result"][2]["roles"].append(obj)
+
+    jesonDump = json.dumps(jeson, indent=4)
 
     # Formatting the output
     titleScope = Fore.RED + "Scope" + Fore.RESET
@@ -488,8 +567,8 @@ async def comparePermission(sc, sa):
         print(f"\n\t {Fore.RED} No role for the specific criteria is found {Fore.RESET}\n")
         exit()
 
-    print(tb)
-    print("")
+    print("\n" + jesonDump)
+    exit()
 
 
 def mainHelpPage():
