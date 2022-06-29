@@ -11,6 +11,7 @@ Simple python tools to automate several routine Cloud Asset Inventory task inclu
 - [google-cloud-asset library](https://github.com/googleapis/python-asset)
 - [prettytable](https://pypi.org/project/prettytable/)
 - [colorama](https://pypi.org/project/colorama/)
+- [py-linq](https://pypi.org/project/py-linq/)
 
 # Installation
 
