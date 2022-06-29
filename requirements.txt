@@ -1,3 +1,4 @@
 colorama
 prettytable
 google-cloud-asset
+py-linq
