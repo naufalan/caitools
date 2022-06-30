@@ -647,7 +647,7 @@ def getPublicHelpPage():
 def comparePermissionHelpPage():
     print(
         """
-        Description       : Compare two or more Service Account role
+        Description       : Compare two Service Account role
             
         Usage             : caitools.py --compare-permission -sc [SCOPE] -sa [SA1,SA2,..]
             
