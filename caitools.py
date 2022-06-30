@@ -421,6 +421,7 @@ async def comparePermission(sc, sa):
     resultFirstSA = []
     resultSecSA = []
     lock = threading.Lock()
+    counter = 0
 
     for serviceAcc in sas:
         # Create client
@@ -464,11 +465,12 @@ async def comparePermission(sc, sa):
             async for item in result:
                 isEmpty = False
 
-                if serviceAcc == sas[0]:
+                if counter == 0:
                     resultFirstSA.append(item)
 
-                elif serviceAcc == sas[1]:
+                elif counter == 1:
                     resultSecSA.append(item)
+        counter += 1
 
     enumFirstSA = Enumerable(resultFirstSA)
     enumSecSA = Enumerable(resultSecSA)
