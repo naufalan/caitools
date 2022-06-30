@@ -141,7 +141,7 @@ async def seePermission(i, s, r=None):
     policy:"{}"
     """.format(i)
     if r is not None:
-        query += "resource=//cloudresourcemanager.googleapis.com/{}".format(r)
+        query += f"resource:\"{r}\""
 
     query = query.replace("\n", "")
     request = asset_v1.SearchAllIamPoliciesRequest
@@ -619,9 +619,11 @@ def seePermissionHelpPage():
                 - -i <identity>     : REQUIRED, specify the identity (can be user or SA)
                                       Example : if user => user:{email} or if SA => serviceAccount:{SA}
                 
-                - -r <resource>     : Specify the resource which permission is set to the identity, it will search
-                                      all the IAM policies with in the specified scope if resource is not specified.
-                                      Example : projects/{PROJECT_ID} , folders/{FOLDER_ID}, or organizations/{ORGANIZATION_ID}.
+                - -r <resource>     : Specify the resource which permission is set to the identity,
+                                      see https://cloud.google.com/asset-inventory/docs/resource-name-format for resource name format.
+                                      
+                                      It will search all the IAM policies with in the specified scope if resource is not specified.
+                                      Example : //storage.googleapis.com/BUCKET
         """
     )
 
